@@ -213,12 +213,6 @@ static void new_window(char *display, char *name, int argc, char **argv)
     DASetPixmap(dockapp->pixmap);
     DASetShape(dockapp->mask);
 
-    draw_bar(dockapp->brightness, BAR_0, BAR_T0);
-    draw_number(dockapp->brightness, PANEL_0);
-
-    draw_bar(0, BAR_1, BAR_T1);
-    draw_number(0, PANEL_1);
-
     /* force the window to stay this size - otherwise the user could
      * resize us and see our panties^Wmaster pixmap . . . */
     hints = XAllocSizeHints();
@@ -290,10 +284,12 @@ int main(int argc, char **argv)
     /* set_message(globals); */
 
     /* main loop */
+    int tic = 0;
     while (1) {
         Atom atom;
         Atom wmdelwin;
         XEvent event;
+        tic++;
         while (XPending(dockapp->display)) {
             XNextEvent(dockapp->display, &event);
             switch (event.type) {
@@ -343,13 +339,12 @@ int main(int argc, char **argv)
         draw_number(dockapp->brightness, PANEL_0);
         draw_bar(dockapp->kb_backlight, BAR_1, BAR_T1);
         draw_number(dockapp->kb_backlight, PANEL_1);
-
         dockapp->update = 1;
         redraw_window();
 
         FD_ZERO(&fds);
         FD_SET(dockapp->x_fd, &fds);
-        /* select(FD_SETSIZE, &fds, NULL, NULL, &tv); */
+        usleep(100000);
     }
     return 0;
 }
