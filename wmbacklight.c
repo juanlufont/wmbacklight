@@ -47,8 +47,6 @@
 #define PANEL_0 0
 #define PANEL_1 1
 
-/* Do NOT change the BASE_PERIOD without reading the code ... */
-#define BASE_PERIOD 100000 /* base period, 100 ms (in usecs) */
 
 struct dockapp {
     int x_fd;                   /* X11 fd */
@@ -247,49 +245,28 @@ int main(int argc, char **argv)
      {"-k", "--kbd-device", "keyboard backlight device", DOString, False, {&kbd_device}}
     };
 
-    /* FILE *fptr; */
-    /* fptr = fopen("/sys/class/backlight/intel_backlight/max_brightness", "r"); */
-    /* fptr = fopen("/sys/class/backlight/intel_backlight/brightness", "r"); */
-    /* fscanf(fptr, "%d", &raw_brightness); */
-    /* fclose(fptr); */
-
-
     dockapp = calloc(1, sizeof(struct dockapp));
     /* globals = calloc(1, sizeof(global_t)); */
 
     if (options[2].used)
         ;
 
-    /* if (critical > 100) { */
-    /*     fprintf(stderr, "Please use values between 0 and 100%%\n"); */
-    /*     fprintf(stderr, "Using default value of 10%%\n"); */
-    /*     critical = 10; */
-    /* } */
+    /* fprintf(stderr, "Using default value of 10%%\n"); */
 
     /* make new dockapp window */
     new_window(display, "wmbacklight", argc, argv);
 
-    /* /1* get initial statistics *1/ */
     /* acquire_all_info(globals); */
-
-    /* if (globals->battery_count > 0) { */
-	/* binfo = &batteries[battery_no]; */
-	/* globals->binfo = binfo; */
-	/* set_batt_id_area(battery_no); */
-	/* pinfo("monitoring battery %s\n", binfo->name); */
-    /* } */
 
     /* clear_time_display(); */
     /* set_power_panel(globals); */
     /* set_message(globals); */
 
     /* main loop */
-    int tic = 0;
     while (1) {
         Atom atom;
         Atom wmdelwin;
         XEvent event;
-        tic++;
         while (XPending(dockapp->display)) {
             XNextEvent(dockapp->display, &event);
             switch (event.type) {
