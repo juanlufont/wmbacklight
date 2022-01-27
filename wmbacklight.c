@@ -28,6 +28,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <sys/stat.h>
+
 #include <X11/X.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
@@ -63,9 +65,9 @@ struct dockapp {
   int update;            /* need to redraw? */
 
   int brightness;
-  int max_brightness;
+  int brightness_max;
   int kb_backlight;
-  int max_kb_backlight;
+  int kb_backlight_max;
   int period_length; /* length of the polling period, multiple of BASE_PERIOD */
 
   char *path_kbd_backlight;
@@ -153,30 +155,23 @@ static void draw_bar(int percent, int bar_dest, int bar_type) {
   copy_xpm_area(sx, sy, bar_w, bar_h, dx, dy);
 }
 
-static int read_magnitude(char *filename) {
+static int read_value(char *filename) {
   int value;
   FILE *fptr;
-  // TODO check if file exist or something
   fptr = fopen(filename, "r");
   fscanf(fptr, "%d", &value);
   fclose(fptr);
   return value;
 }
 
-static int read_brightness(void) {
-  int bright_per;
-  int bright = read_magnitude(dockapp->path_scr_brightness);
-  int bright_max = read_magnitude(dockapp->path_scr_brightness_max);
-  bright_per = (int)((100.0 * bright) / bright_max);
-  return bright_per;
+static int read_scr_brightness(void) {
+  dockapp->brightness = read_value(dockapp->path_scr_brightness);
+  return (int)((100.0 * dockapp->brightness) / dockapp->brightness_max);
 }
 
-static int read_kb_backlight(void) {
-  int bright_per;
-  int bright = read_magnitude(dockapp->path_kbd_backlight);
-  int bright_max = read_magnitude(dockapp->path_kbd_backlight_max);
-  bright_per = (int)((100.0 * bright) / bright_max);
-  return bright_per;
+static int read_kbd_backlight(void) {
+  dockapp->kb_backlight = read_value(dockapp->path_kbd_backlight);
+  return (int)((100.0 * dockapp->kb_backlight) / dockapp->kb_backlight_max);
 }
 
 static void redraw_window(void) {
@@ -185,6 +180,15 @@ static void redraw_window(void) {
               64, 0, 0);
     dockapp->update = 0;
   }
+}
+
+static int check_file(const char *path) {
+  struct stat buffer;
+  int exist = stat(path, &buffer);
+  if (exist == 0)
+    return 1;
+  else
+    return 0;
 }
 
 static void new_window(char *display, char *name, int argc, char **argv) {
@@ -219,7 +223,6 @@ static void new_window(char *display, char *name, int argc, char **argv) {
     XSetWMNormalHints(dockapp->display, dockapp->win, hints);
     XFree(hints);
   }
-
   DAShow();
 }
 
@@ -261,8 +264,6 @@ int main(int argc, char **argv) {
       "WM dockapp to display screen brightness and keyboard backlight level",
       VERSION);
 
-  // if (! options[1].used){}
-
   int size;
   // screen brightness
   size = strlen(scr_device) + strlen("/brightness");
@@ -282,10 +283,29 @@ int main(int argc, char **argv) {
 
   strcpy(dockapp->path_kbd_backlight, kbd_device);
   strcat(dockapp->path_kbd_backlight, "/brightness");
-  strcpy(dockapp->path_kbd_backlight_max, scr_device);
+  strcpy(dockapp->path_kbd_backlight_max, kbd_device);
   strcat(dockapp->path_kbd_backlight_max, "/max_brightness");
 
-  /* fprintf(stderr, "Using default value of 10%%\n"); */
+  if (!check_file(dockapp->path_scr_brightness)) {
+    fprintf(stderr, "Invalid path: %s\n", dockapp->path_scr_brightness);
+    exit(1);
+  }
+  if (!check_file(dockapp->path_scr_brightness_max)) {
+    fprintf(stderr, "Invalid path: %s\n", dockapp->path_scr_brightness_max);
+    exit(1);
+  }
+  if (!check_file(dockapp->path_kbd_backlight)) {
+    fprintf(stderr, "Invalid path: %s\n", dockapp->path_kbd_backlight);
+    exit(1);
+  }
+  if (!check_file(dockapp->path_kbd_backlight_max)) {
+    fprintf(stderr, "Invalid path: %s\n", dockapp->path_kbd_backlight_max);
+    exit(1);
+  }
+
+  // read max values
+  dockapp->brightness_max = read_value(dockapp->path_scr_brightness_max);
+  dockapp->kb_backlight_max = read_value(dockapp->path_kbd_backlight_max);
 
   /* make new dockapp window */
   new_window(display, "wmbacklight", argc, argv);
@@ -344,8 +364,8 @@ int main(int argc, char **argv) {
       }
     }
 
-    dockapp->brightness = read_brightness();
-    dockapp->kb_backlight = read_kb_backlight();
+    dockapp->brightness = read_scr_brightness();
+    dockapp->kb_backlight = read_kbd_backlight();
     draw_bar(dockapp->brightness, BAR_0, BAR_T0);
     draw_number(dockapp->brightness, PANEL_0);
     draw_bar(dockapp->kb_backlight, BAR_1, BAR_T1);
