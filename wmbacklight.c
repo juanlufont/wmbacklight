@@ -40,7 +40,7 @@
 #include "XPM/wmbacklight.xpm"
 
 #define VERSION "0.0"
-#define SLEEP 100000
+#define SLEEP 150000
 
 // bar types
 #define BAR_T0 0
@@ -62,13 +62,13 @@ struct dockapp {
   unsigned short width;  /* width of pixmap */
   unsigned short height; /* height of pixmap */
   int screen;            /* current screen */
-  int update;            /* need to redraw? */
+  int redraw;            /* need to redraw? */
+  int updated;           /* magnitudes were updated */
 
   int brightness;
   int brightness_max;
   int kb_backlight;
   int kb_backlight_max;
-  int period_length; /* length of the polling period, multiple of BASE_PERIOD */
 
   char *path_kbd_backlight;
   char *path_kbd_backlight_max;
@@ -78,27 +78,24 @@ struct dockapp {
 
 /* globals */
 struct dockapp *dockapp;
-
-char default_scr_brightness[] = "/sys/class/backlight/intel_backlight";
-char default_kbd_backlight[] = "/sys/class/leds/tpacpi::kbd_backlight";
 /* global_t *globals; */
 
 /* copy a chunk of pixmap around the app */
 static void copy_xpm_area(int x, int y, int w, int h, int dx, int dy) {
   XCopyArea(DADisplay, dockapp->pixmap, dockapp->pixmap, DAGC, x, y, w, h, dx,
             dy);
-  dockapp->update = 1;
+  dockapp->redraw = 1;
 }
 
 /* get x coordinate for digit d from pixmap */
 static void draw_number(int number, int panel) {
   int panel_offset_y = 29;
   int digit;
-  int digit_off_x = 0;
+  // int digit_off_x = 0;
   int digit_off_y = 92;
   // char size, defined by pixmap
   int char_width = 7;
-  int char_height = 13;
+  // int char_height = 13;
   // panel location
   int panel_x = 10;
   int panel_y = 16 + panel * panel_offset_y;
@@ -164,22 +161,20 @@ static int read_value(char *filename) {
   return value;
 }
 
-static int read_scr_brightness(void) {
-  dockapp->brightness = read_value(dockapp->path_scr_brightness);
-  return (int)((100.0 * dockapp->brightness) / dockapp->brightness_max);
+static void read_scr_brightness(struct dockapp *d) {
+  int raw;
+  int bright_old = d->brightness;
+  raw = read_value(d->path_scr_brightness);
+  d->brightness = (int)((100.0 * raw) / d->brightness_max);
+  d->updated += (bright_old != d->brightness);
 }
 
-static int read_kbd_backlight(void) {
-  dockapp->kb_backlight = read_value(dockapp->path_kbd_backlight);
-  return (int)((100.0 * dockapp->kb_backlight) / dockapp->kb_backlight_max);
-}
-
-static void redraw_window(void) {
-  if (dockapp->update) {
-    XCopyArea(dockapp->display, dockapp->pixmap, dockapp->win, DAGC, 0, 0, 64,
-              64, 0, 0);
-    dockapp->update = 0;
-  }
+static void read_kbd_backlight(struct dockapp *d) {
+  int raw;
+  int kb_old = d->kb_backlight;
+  raw = read_value(d->path_kbd_backlight);
+  d->kb_backlight = (int)((100.0 * raw) / d->kb_backlight_max);
+  d->updated += (kb_old != d->kb_backlight);
 }
 
 static int check_file(const char *path) {
@@ -189,6 +184,14 @@ static int check_file(const char *path) {
     return 1;
   else
     return 0;
+}
+
+static void redraw_window(void) {
+  if (dockapp->redraw) {
+    XCopyArea(dockapp->display, dockapp->pixmap, dockapp->win, DAGC, 0, 0, 64,
+              64, 0, 0);
+    dockapp->redraw = 0;
+  }
 }
 
 static void new_window(char *display, char *name, int argc, char **argv) {
@@ -228,10 +231,11 @@ static void new_window(char *display, char *name, int argc, char **argv) {
 
 int main(int argc, char **argv) {
   char *display = NULL;
+
+  char default_scr_brightness[] = "/sys/class/backlight/intel_backlight";
+  char default_kbd_backlight[] = "/sys/class/leds/tpacpi::kbd_backlight";
   char *scr_device = default_scr_brightness;
   char *kbd_device = default_kbd_backlight;
-  int sample_count = 0;
-  int samplerate = 20;
 
   fd_set fds;
 
@@ -257,7 +261,6 @@ int main(int argc, char **argv) {
        {&kbd_device}}};
 
   dockapp = calloc(1, sizeof(struct dockapp));
-  /* globals = calloc(1, sizeof(global_t)); */
 
   DAParseArguments(
       argc, argv, options, 3,
@@ -310,12 +313,6 @@ int main(int argc, char **argv) {
   /* make new dockapp window */
   new_window(display, "wmbacklight", argc, argv);
 
-  /* acquire_all_info(globals); */
-
-  /* clear_time_display(); */
-  /* set_power_panel(globals); */
-  /* set_message(globals); */
-
   /* main loop */
   while (1) {
     Atom atom;
@@ -326,7 +323,7 @@ int main(int argc, char **argv) {
       switch (event.type) {
       case Expose:
         /* update */
-        dockapp->update = 1;
+        dockapp->redraw = 1;
         while (XCheckTypedEvent(dockapp->display, Expose, &event))
           ;
         redraw_window();
@@ -340,7 +337,7 @@ int main(int argc, char **argv) {
       case ButtonRelease:
         break;
       case ClientMessage:
-        /* what /is/ this crap?
+        /* what /is/ this ****?
          * Turns out that libdockapp adds the WM_DELETE_WINDOW atom to
          * the WM_PROTOCOLS property for the window, which means that
          * rather than get a simple DestroyNotify message, we get a
@@ -364,14 +361,17 @@ int main(int argc, char **argv) {
       }
     }
 
-    dockapp->brightness = read_scr_brightness();
-    dockapp->kb_backlight = read_kbd_backlight();
-    draw_bar(dockapp->brightness, BAR_0, BAR_T0);
-    draw_number(dockapp->brightness, PANEL_0);
-    draw_bar(dockapp->kb_backlight, BAR_1, BAR_T1);
-    draw_number(dockapp->kb_backlight, PANEL_1);
-    dockapp->update = 1;
-    redraw_window();
+    // read
+    read_scr_brightness(dockapp);
+    read_kbd_backlight(dockapp);
+
+    if(dockapp->updated){
+      draw_bar(dockapp->brightness, BAR_0, BAR_T0);
+      draw_number(dockapp->brightness, PANEL_0);
+      draw_bar(dockapp->kb_backlight, BAR_1, BAR_T1);
+      draw_number(dockapp->kb_backlight, PANEL_1);
+      redraw_window();
+    }
 
     FD_ZERO(&fds);
     FD_SET(dockapp->x_fd, &fds);
